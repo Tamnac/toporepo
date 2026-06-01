@@ -5,6 +5,7 @@ use std::path::PathBuf;
 mod cache;
 mod embed;
 mod graph;
+mod importance;
 mod index;
 mod lang;
 mod render;

@@ -14,7 +14,6 @@ pub struct FileData {
 }
 
 pub struct Index {
-    pub root: PathBuf,
     pub files: Vec<FileData>,
     /// identifier -> file indices that define it (deduped).
     pub defines: HashMap<String, Vec<usize>>,
@@ -38,10 +37,10 @@ impl Index {
             let rel = walk::rel(&path, root);
             files.push(FileData { path, rel, source, tags });
         }
-        Self::from_files(root.to_path_buf(), files)
+        Self::from_files(files)
     }
 
-    fn from_files(root: PathBuf, files: Vec<FileData>) -> Self {
+    fn from_files(files: Vec<FileData>) -> Self {
         let mut defines: HashMap<String, Vec<usize>> = HashMap::new();
         let mut references: HashMap<String, HashMap<usize, usize>> = HashMap::new();
         for (fi, f) in files.iter().enumerate() {
@@ -63,7 +62,7 @@ impl Index {
                 }
             }
         }
-        Index { root, files, defines, references }
+        Index { files, defines, references }
     }
 
     /// Definition tags of a file, paired with the index into `file.tags`.

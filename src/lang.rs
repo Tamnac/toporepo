@@ -8,6 +8,7 @@ static QUERIES: Dir = include_dir!("$CARGO_MANIFEST_DIR/queries");
 
 /// A supported language: its tree-sitter grammar and the bundled `.scm` tag query.
 pub struct Lang {
+    #[allow(dead_code)] // informative metadata
     pub name: &'static str,
     pub language: Language,
     pub query: &'static str,

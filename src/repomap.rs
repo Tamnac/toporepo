@@ -12,11 +12,17 @@ use std::path::{Path, PathBuf};
 
 /// How strongly a definition's own semantic similarity reorders it on top of
 /// its file's graph rank.
-const SEM_ALPHA: f32 = 5.0;
+///
+/// Query mode fuses two rankings with Reciprocal Rank Fusion (RRF), which is
+/// scale-free: neither the graph's nor the semantic ranker's raw magnitudes can
+/// swamp the other (a well-connected hub can't outrank a strong match).
+const RRF_K: f32 = 60.0;
 /// Number of top semantic matches used to seed the graph walk.
 const SEED_K: usize = 15;
-const WALK_HOPS: usize = 3;
-const WALK_DECAY: f32 = 0.5;
+const WALK_HOPS: usize = 2;
+/// Kept well below 1 so graph expansion stays subordinate to the semantic seeds
+/// (related files are added at lower priority, not promoted above the matches).
+const WALK_DECAY: f32 = 0.25;
 
 pub struct Options {
     pub query: Option<String>,
@@ -49,7 +55,8 @@ pub fn run(root: &Path, opts: &Options) -> Result<String> {
         .collect();
 
     // Semantic ranking (only when a query is given; otherwise no model needed).
-    let mut def_sim: HashMap<(usize, usize), f32> = HashMap::new();
+    // `sem_rank` is each definition's 0-based position in the similarity ranking.
+    let mut sem_rank: HashMap<(usize, usize), usize> = HashMap::new();
     let mut sem_seeds: HashMap<usize, f32> = HashMap::new();
     if let Some(q) = &opts.query {
         let model_dir = embed::resolve_model(opts.model.as_deref())?;
@@ -60,14 +67,15 @@ pub fn run(root: &Path, opts: &Options) -> Result<String> {
         }
         let qv = embedder.encode_one(q);
         let ranked = sem.rank(&qv);
-        for &(di, score) in &ranked {
+        for (pos, &(di, _)) in ranked.iter().enumerate() {
             let d = sem.defs[di];
-            def_sim.insert((d.file, d.tag), score);
+            sem_rank.insert((d.file, d.tag), pos);
         }
         sem_seeds = sem.seed_files(&ranked, SEED_K);
     }
 
     // Reference graph + seeds.
+    let querying = opts.query.is_some();
     let graph = Graph::build(&idx, &mentioned, &chat);
     let mut seeds = sem_seeds;
     let seed_floor = seeds.values().cloned().fold(0.0f32, f32::max).max(1.0);
@@ -77,10 +85,32 @@ pub fn run(root: &Path, opts: &Options) -> Result<String> {
     if seeds.is_empty() {
         seeds = graph.degree_prior();
     }
-    let file_rank = graph.walk(&seeds, WALK_HOPS, WALK_DECAY);
+    let mut file_rank = graph.walk(&seeds, WALK_HOPS, WALK_DECAY);
 
-    // Final per-definition score = file rank, refined by the def's own similarity.
-    let querying = opts.query.is_some();
+    // Important files (entry points / config) get a rank nudge and a small floor
+    // so they aren't dropped entirely when the graph signal is weak. This is a
+    // generic-map heuristic; for a specific query it would just add hub noise.
+    if !querying {
+        let max_rank = file_rank.iter().cloned().fold(0.0f32, f32::max);
+        let floor = max_rank * 1e-3;
+        for fi in 0..idx.files.len() {
+            if crate::importance::is_important(&idx.files[fi].rel) {
+                file_rank[fi] = file_rank[fi].max(floor) * 1.5;
+            }
+        }
+    }
+
+    // Per-file graph-rank position (for RRF), best file first.
+    let mut file_order: Vec<usize> = (0..idx.files.len()).collect();
+    file_order.sort_by(|&a, &b| file_rank[b].total_cmp(&file_rank[a]));
+    let mut graph_pos = vec![0usize; idx.files.len()];
+    for (pos, &fi) in file_order.iter().enumerate() {
+        graph_pos[fi] = pos;
+    }
+
+    // Final per-definition score. Generic map: the file's graph rank. Query:
+    // RRF over the graph and semantic rankings.
+    let n_defs = sem_rank.len();
     let mut defs: Vec<RankedDef> = Vec::new();
     for fi in 0..idx.files.len() {
         let fr = file_rank[fi];
@@ -88,8 +118,16 @@ pub fn run(root: &Path, opts: &Options) -> Result<String> {
             continue;
         }
         for (tag_idx, _) in idx.defs(fi) {
-            let sim = def_sim.get(&(fi, tag_idx)).copied().unwrap_or(0.0).max(0.0);
-            let score = if querying { fr * (1.0 + SEM_ALPHA * sim) } else { fr };
+            let mut score = if querying {
+                let sr = sem_rank.get(&(fi, tag_idx)).copied().unwrap_or(n_defs);
+                1.0 / (RRF_K + graph_pos[fi] as f32) + 1.0 / (RRF_K + sr as f32)
+            } else {
+                fr
+            };
+            // Direct boost when the definition name is an exact mentioned identifier.
+            if mentioned.contains(&idx.files[fi].tags[tag_idx].name) {
+                score *= 3.0;
+            }
             defs.push(RankedDef { file: fi, tag: tag_idx, score });
         }
     }

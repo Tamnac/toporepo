@@ -7,8 +7,6 @@ use anyhow::{Context, Result};
 use model2vec_rs::model::StaticModel;
 use std::path::{Path, PathBuf};
 
-pub const DIM: usize = 256;
-
 pub struct Embedder {
     model: StaticModel,
 }
