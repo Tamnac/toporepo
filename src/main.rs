@@ -2,9 +2,13 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod graph;
+mod index;
 mod lang;
 mod tags;
 mod walk;
+
+use std::collections::HashSet;
 
 /// codemapper — a token-budgeted code outline/retrieval map.
 ///
@@ -22,6 +26,8 @@ enum Command {
     Map(MapArgs),
     /// Debug: extract and print tree-sitter tags for the given path.
     Tags(TagsArgs),
+    /// Debug: build the reference graph and print top-ranked files.
+    Graph(GraphArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -66,6 +72,19 @@ struct TagsArgs {
     path: PathBuf,
 }
 
+#[derive(clap::Args, Debug)]
+struct GraphArgs {
+    /// Repository root.
+    #[arg(default_value = ".")]
+    path: PathBuf,
+    /// Seed files for the walk (comma-separated). Empty = degree prior.
+    #[arg(long, value_delimiter = ',')]
+    mentioned_files: Vec<String>,
+    /// Boosted identifiers (comma-separated).
+    #[arg(long, value_delimiter = ',')]
+    mentioned_idents: Vec<String>,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -73,6 +92,34 @@ fn main() -> Result<()> {
             eprintln!("map: not yet implemented (path={:?}, query={:?}, tokens={})", args.path, args.query, args.tokens);
         }
         Command::Tags(args) => cmd_tags(&args)?,
+        Command::Graph(args) => cmd_graph(&args)?,
+    }
+    Ok(())
+}
+
+fn cmd_graph(args: &GraphArgs) -> Result<()> {
+    let idx = index::Index::build(&args.path);
+    let mentioned: HashSet<String> = args.mentioned_idents.iter().cloned().collect();
+    let chat: HashSet<usize> = args
+        .mentioned_files
+        .iter()
+        .filter_map(|f| idx.files.iter().position(|fd| &fd.rel == f))
+        .collect();
+    let g = graph::Graph::build(&idx, &mentioned, &chat);
+
+    let seeds: std::collections::HashMap<usize, f32> = if chat.is_empty() {
+        g.degree_prior()
+    } else {
+        chat.iter().map(|&i| (i, 1.0)).collect()
+    };
+    let rank = g.walk(&seeds, 3, 0.5);
+    let mut ranked: Vec<(usize, f32)> = rank.iter().copied().enumerate().collect();
+    ranked.sort_by(|a, b| b.1.total_cmp(&a.1));
+    for (i, r) in ranked.into_iter().take(30) {
+        if r <= 0.0 {
+            break;
+        }
+        println!("{:>10.4}  {}", r, idx.files[i].rel);
     }
     Ok(())
 }
