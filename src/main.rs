@@ -2,9 +2,12 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod cache;
+mod embed;
 mod graph;
 mod index;
 mod lang;
+mod semantic;
 mod tags;
 mod walk;
 
@@ -28,6 +31,8 @@ enum Command {
     Tags(TagsArgs),
     /// Debug: build the reference graph and print top-ranked files.
     Graph(GraphArgs),
+    /// Debug: embed definitions and print the top semantic matches for a query.
+    Query(QueryArgs),
 }
 
 #[derive(clap::Args, Debug)]
@@ -73,6 +78,23 @@ struct TagsArgs {
 }
 
 #[derive(clap::Args, Debug)]
+struct QueryArgs {
+    /// Repository root.
+    #[arg(default_value = ".")]
+    path: PathBuf,
+    /// Natural-language query.
+    #[arg(short, long)]
+    query: String,
+    /// Number of matches to show.
+    #[arg(short, long, default_value_t = 20)]
+    top: usize,
+    #[arg(long, env = "CODEMAPPER_MODEL")]
+    model: Option<PathBuf>,
+    #[arg(long)]
+    no_cache: bool,
+}
+
+#[derive(clap::Args, Debug)]
 struct GraphArgs {
     /// Repository root.
     #[arg(default_value = ".")]
@@ -93,6 +115,22 @@ fn main() -> Result<()> {
         }
         Command::Tags(args) => cmd_tags(&args)?,
         Command::Graph(args) => cmd_graph(&args)?,
+        Command::Query(args) => cmd_query(&args)?,
+    }
+    Ok(())
+}
+
+fn cmd_query(args: &QueryArgs) -> Result<()> {
+    let idx = index::Index::build(&args.path);
+    let model_dir = embed::resolve_model(args.model.as_deref())?;
+    let embedder = embed::Embedder::load(&model_dir)?;
+    let sem = semantic::Semantic::build(&idx, &embedder, &args.path, !args.no_cache);
+    eprintln!("{} definitions embedded", sem.defs.len());
+    let qv = embedder.encode_one(&args.query);
+    for (di, score) in sem.rank(&qv).into_iter().take(args.top) {
+        let d = sem.defs[di];
+        let t = &idx.files[d.file].tags[d.tag];
+        println!("{:>7.4}  {}:{}  {}", score, idx.files[d.file].rel, t.line, t.name);
     }
     Ok(())
 }
