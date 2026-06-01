@@ -7,6 +7,8 @@ mod embed;
 mod graph;
 mod index;
 mod lang;
+mod render;
+mod repomap;
 mod semantic;
 mod tags;
 mod walk;
@@ -110,12 +112,29 @@ struct GraphArgs {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Map(args) => {
-            eprintln!("map: not yet implemented (path={:?}, query={:?}, tokens={})", args.path, args.query, args.tokens);
-        }
+        Command::Map(args) => cmd_map(&args)?,
         Command::Tags(args) => cmd_tags(&args)?,
         Command::Graph(args) => cmd_graph(&args)?,
         Command::Query(args) => cmd_query(&args)?,
+    }
+    Ok(())
+}
+
+fn cmd_map(args: &MapArgs) -> Result<()> {
+    let opts = repomap::Options {
+        query: args.query.clone(),
+        tokens: args.tokens,
+        mentioned_idents: args.mentioned_idents.clone(),
+        mentioned_files: args.mentioned_files.clone(),
+        model: args.model.clone(),
+        no_cache: args.no_cache,
+        verbose: args.verbose,
+    };
+    let map = repomap::run(&args.path, &opts)?;
+    if map.is_empty() {
+        eprintln!("(empty map: no definitions matched)");
+    } else {
+        println!("{map}");
     }
     Ok(())
 }
