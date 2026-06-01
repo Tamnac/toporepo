@@ -2,6 +2,10 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
+mod lang;
+mod tags;
+mod walk;
+
 /// codemapper — a token-budgeted code outline/retrieval map.
 ///
 /// Pipeline: tree-sitter tags -> reference graph -> semantic rerank -> token-budget fit.
@@ -68,9 +72,43 @@ fn main() -> Result<()> {
         Command::Map(args) => {
             eprintln!("map: not yet implemented (path={:?}, query={:?}, tokens={})", args.path, args.query, args.tokens);
         }
-        Command::Tags(args) => {
-            eprintln!("tags: not yet implemented (path={:?})", args.path);
+        Command::Tags(args) => cmd_tags(&args)?,
+    }
+    Ok(())
+}
+
+fn cmd_tags(args: &TagsArgs) -> Result<()> {
+    let root = &args.path;
+    let files = walk::source_files(root);
+    let mut n_def = 0usize;
+    let mut n_ref = 0usize;
+    for file in &files {
+        let Ok(src) = std::fs::read_to_string(file) else {
+            continue;
+        };
+        let tags = tags::extract(file, &src);
+        if tags.is_empty() {
+            continue;
+        }
+        let rel = walk::rel(file, root);
+        println!("{rel}");
+        for t in &tags {
+            match t.kind {
+                tags::Kind::Def => n_def += 1,
+                tags::Kind::Ref => n_ref += 1,
+            }
+            let k = match t.kind {
+                tags::Kind::Def => "def",
+                tags::Kind::Ref => "ref",
+            };
+            println!("  {:<4} {:>4}-{:<4} {}", k, t.line, t.end_line, t.name);
         }
     }
+    eprintln!(
+        "{} files, {} defs, {} refs",
+        files.len(),
+        n_def,
+        n_ref
+    );
     Ok(())
 }

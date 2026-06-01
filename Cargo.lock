@@ -200,6 +200,7 @@ dependencies = [
  "include_dir",
  "model2vec-rs",
  "serde",
+ "streaming-iterator",
  "tree-sitter",
  "tree-sitter-c",
  "tree-sitter-c-sharp",
