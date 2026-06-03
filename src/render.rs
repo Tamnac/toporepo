@@ -1,11 +1,19 @@
-//! Outline rendering, in the spirit of grep_ast's `TreeContext`: show selected
-//! definition lines together with their enclosing scope headers, collapsing the
-//! gaps with an ellipsis marker.
+//! Outline rendering: show selected definition lines together with their
+//! enclosing scope headers, with blank-line separators at gaps.
 
 use crate::lang::Lang;
 use crate::tags::Tag;
 use std::collections::BTreeSet;
 use tree_sitter::Parser;
+
+/// Only these ancestor node kinds produce useful scope-header lines.
+fn is_scope_kind(kind: &str) -> bool {
+    const KW: &[&str] = &[
+        "function", "method", "class", "struct", "enum", "impl",
+        "interface", "module", "namespace", "trait",
+    ];
+    KW.iter().any(|kw| kind.contains(kw))
+}
 
 /// For each definition (keyed by its index into the file's `tags`), compute the
 /// 1-based line numbers to display: the signature line plus the start line of
@@ -25,13 +33,19 @@ pub fn plan_lines(lang: &Lang, source: &str, defs: &[(usize, &Tag)]) -> Vec<(usi
             let mut lines = BTreeSet::new();
             let sig = t.line; // 1-based name/signature line
             lines.insert(sig);
+            lines.insert(t.end_line);
+            if let Some(dl) = t.doc_line {
+                for l in dl..t.line {
+                    lines.insert(l);
+                }
+            }
             // Walk ancestors, adding the header line of each multi-line scope above.
             if let Some(node) = root.descendant_for_byte_range(t.start_byte, t.start_byte) {
                 let mut cur = node.parent();
                 while let Some(p) = cur {
                     let s = p.start_position().row + 1;
                     let e = p.end_position().row + 1;
-                    if e > s && s < sig {
+                    if e > s && s < sig && p.parent().is_some() && is_scope_kind(p.kind()) {
                         lines.insert(s);
                     }
                     cur = p.parent();
@@ -43,7 +57,7 @@ pub fn plan_lines(lang: &Lang, source: &str, defs: &[(usize, &Tag)]) -> Vec<(usi
 }
 
 /// Render one file: `rel` header followed by the chosen `lines` (1-based),
-/// with `...` markers where lines are skipped.
+/// with blank lines where lines are skipped.
 pub fn render_file(rel: &str, source: &str, lines: &BTreeSet<usize>) -> String {
     if lines.is_empty() {
         return String::new();
@@ -59,10 +73,8 @@ pub fn render_file(rel: &str, source: &str, lines: &BTreeSet<usize>) -> String {
         if ln == 0 || ln > src_lines.len() {
             continue;
         }
-        match prev {
-            Some(p) if ln == p + 1 => {}
-            Some(_) => out.push_str(&format!("{:>width$}  ...\n", "", width = width)),
-            None => {}
+        if let Some(p) = prev {
+            if ln > p + 1 { out.push('\n'); }
         }
         out.push_str(&format!("{:>width$}| {}\n", ln, src_lines[ln - 1], width = width));
         prev = Some(ln);
@@ -72,5 +84,5 @@ pub fn render_file(rel: &str, source: &str, lines: &BTreeSet<usize>) -> String {
 
 /// Approximate token count (~4 chars/token) for budget fitting.
 pub fn approx_tokens(s: &str) -> usize {
-    (s.chars().count() + 3) / 4
+    (s.chars().count() as f64 / 3.8) as usize
 }

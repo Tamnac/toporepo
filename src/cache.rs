@@ -1,68 +1,82 @@
-//! Persistent embedding cache, keyed by (relative path, mtime, size).
+//! Persistent embedding cache backed by SQLite, keyed by `(rel_path, body_hash)`.
 //!
-//! Stored as a single bincode blob at `<root>/.codemapper/embeds.bin`. Tag
-//! parsing is cheap and done fresh each run; embeddings (the only model-bound
-//! cost) are what we cache. A file's cached embeddings are valid only when its
-//! mtime and size both match, in which case the definition order is identical.
+//! Each definition's embedding is cached independently: only defs whose body
+//! text changed are re-embedded.  The hash covers the full declaration span
+//! (`start_byte..end_byte`), so renaming, restructuring, or editing the body
+//! all invalidate correctly.
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use rusqlite::{params, Connection};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Entry {
-    pub mtime_ns: u128,
-    pub size: u64,
-    /// Embeddings in definition-encounter order for the file.
-    pub embeds: Vec<Vec<f32>>,
-}
-
-#[derive(Serialize, Deserialize, Default)]
-pub struct Cache {
-    entries: HashMap<String, Entry>,
-}
-
 fn cache_path(root: &Path) -> PathBuf {
-    root.join(".codemapper").join("embeds.bin")
+    root.join(".codemapper").join("embeds.db")
+}
+
+/// 64-bit content hash of a definition's body text.
+pub fn body_hash(text: &str) -> i64 {
+    let mut h = DefaultHasher::new();
+    text.hash(&mut h);
+    h.finish() as i64
+}
+
+pub struct Cache {
+    conn: Connection,
 }
 
 impl Cache {
-    pub fn load(root: &Path) -> Cache {
-        let path = cache_path(root);
-        std::fs::read(&path)
-            .ok()
-            .and_then(|b| bincode::deserialize(&b).ok())
-            .unwrap_or_default()
-    }
-
-    pub fn save(&self, root: &Path) -> std::io::Result<()> {
+    /// Open (or create) the cache database.  Returns `None` on any I/O or
+    /// schema error — callers fall back to uncached embedding.
+    pub fn open(root: &Path) -> Option<Self> {
         let path = cache_path(root);
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
+            std::fs::create_dir_all(dir).ok()?;
         }
-        let bytes = bincode::serialize(self).unwrap_or_default();
-        std::fs::write(path, bytes)
+        // Remove legacy bincode cache if present.
+        let old = root.join(".codemapper").join("embeds.bin");
+        if old.exists() {
+            let _ = std::fs::remove_file(&old);
+        }
+        let conn = Connection::open(&path).ok()?;
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS embeds (
+                rel_path  TEXT NOT NULL,
+                body_hash INTEGER NOT NULL,
+                embed     BLOB NOT NULL,
+                PRIMARY KEY (rel_path, body_hash)
+            )",
+        )
+        .ok()?;
+        conn.execute_batch("PRAGMA journal_mode=WAL").ok();
+        Some(Cache { conn })
     }
 
-    /// Return cached embeddings if the entry matches the file's current mtime/size.
-    pub fn get(&self, rel: &str, mtime_ns: u128, size: u64) -> Option<&[Vec<f32>]> {
-        let e = self.entries.get(rel)?;
-        (e.mtime_ns == mtime_ns && e.size == size).then(|| e.embeds.as_slice())
+    pub fn get(&self, rel: &str, hash: i64) -> Option<Vec<f32>> {
+        self.conn
+            .prepare_cached("SELECT embed FROM embeds WHERE rel_path=?1 AND body_hash=?2")
+            .ok()?
+            .query_row(params![rel, hash], |row| {
+                let blob: Vec<u8> = row.get(0)?;
+                Ok(blob_to_vec(&blob))
+            })
+            .ok()
     }
 
-    pub fn put(&mut self, rel: String, mtime_ns: u128, size: u64, embeds: Vec<Vec<f32>>) {
-        self.entries.insert(rel, Entry { mtime_ns, size, embeds });
+    pub fn put(&self, rel: &str, hash: i64, vec: &[f32]) {
+        let _ = self.conn.execute(
+            "INSERT OR REPLACE INTO embeds (rel_path,body_hash,embed) VALUES (?1,?2,?3)",
+            params![rel, hash, vec_to_blob(vec)],
+        );
     }
 }
 
-/// `(mtime_ns, size)` metadata key for a file, or `None` if unavailable.
-pub fn meta_key(path: &Path) -> Option<(u128, u64)> {
-    let m = std::fs::metadata(path).ok()?;
-    let mtime = m
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_nanos();
-    Some((mtime, m.len()))
+fn vec_to_blob(v: &[f32]) -> Vec<u8> {
+    v.iter().flat_map(|f| f.to_le_bytes()).collect()
+}
+
+fn blob_to_vec(b: &[u8]) -> Vec<f32> {
+    b.chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect()
 }

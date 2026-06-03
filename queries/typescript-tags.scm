@@ -37,6 +37,33 @@
 (type_alias_declaration
   name: (type_identifier) @name.definition.type) @definition.type
 
+;; const f = () => ... / const f = function ...
+(lexical_declaration
+  (variable_declarator
+    name: (identifier) @name.definition.function
+    value: [(arrow_function) (function_expression)]) @definition.function)
+
+;; var f = () => ... / var f = function ...
+(variable_declaration
+  (variable_declarator
+    name: (identifier) @name.definition.function
+    value: [(arrow_function) (function_expression)]) @definition.function)
+
+;; obj.prop = () => ... / obj.prop = function ...
+(assignment_expression
+  left: [
+    (identifier) @name.definition.function
+    (member_expression
+      property: (property_identifier) @name.definition.function)
+  ]
+  right: [(arrow_function) (function_expression)]
+) @definition.function
+
+;; { key: () => ... } / { key: function ... }
+(pair
+  key: (property_identifier) @name.definition.function
+  value: [(arrow_function) (function_expression)]) @definition.function
+
 (comment) @doc
 
 (enum_declaration

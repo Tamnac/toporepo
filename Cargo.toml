@@ -19,7 +19,7 @@ clap = { version = "4", features = ["derive", "env"] }
 ignore = "0.4"
 include_dir = "0.7"
 serde = { version = "1", features = ["derive"] }
-bincode = "1.3"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 # tree-sitter parsing
 tree-sitter = "0.25"

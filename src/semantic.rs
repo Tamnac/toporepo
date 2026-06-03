@@ -1,7 +1,7 @@
-//! Semantic index: embed every definition's code (cached by mtime/size), then
-//! rank definitions against a natural-language query by cosine similarity.
+//! Semantic index: embed every definition's code (cached per-def by body hash),
+//! then rank definitions against a natural-language query by cosine similarity.
 
-use crate::cache::{self, Cache};
+use crate::cache;
 use crate::embed::{self, Embedder};
 use crate::index::Index;
 use crate::tags::Tag;
@@ -39,13 +39,17 @@ pub fn def_text(source: &str, tag: &Tag) -> String {
     } else {
         slice
     };
-    slice.trim().to_string()
+    let body = slice.trim();
+    match &tag.doc {
+        Some(doc) => format!("{doc}\n{body}"),
+        None => body.to_string(),
+    }
 }
 
 impl Semantic {
     /// Build the definition embedding index, reusing cached vectors where valid.
     pub fn build(index: &Index, embedder: &Embedder, root: &std::path::Path, use_cache: bool) -> Self {
-        let mut cache = if use_cache { Cache::load(root) } else { Cache::default() };
+        let cache = if use_cache { cache::Cache::open(root) } else { None };
         let mut defs = Vec::new();
         let mut vecs = Vec::new();
 
@@ -54,41 +58,43 @@ impl Semantic {
             if def_tags.is_empty() {
                 continue;
             }
-            let key = cache::meta_key(&file.path);
-            let cached = match (use_cache, key) {
-                (true, Some((mtime, size))) => cache
-                    .get(&file.rel, mtime, size)
-                    .filter(|v| v.len() == def_tags.len())
-                    .map(|v| v.to_vec()),
-                _ => None,
-            };
 
-            let file_vecs = match cached {
-                Some(v) => v,
-                None => {
-                    let texts: Vec<String> = def_tags
-                        .iter()
-                        .map(|(_, t)| def_text(&file.source, t))
-                        .collect();
-                    let v = embedder.encode(&texts);
-                    if use_cache {
-                        if let Some((mtime, size)) = key {
-                            cache.put(file.rel.clone(), mtime, size, v.clone());
-                        }
-                    }
-                    v
+            // Per-def: compute body text + hash, check cache.
+            let mut entries: Vec<(usize, i64, Option<Vec<f32>>)> = Vec::new();
+            let mut to_embed: Vec<String> = Vec::new();
+            for &(tag_idx, t) in &def_tags {
+                let text = def_text(&file.source, t);
+                let hash = cache::body_hash(&text);
+                let cached = cache.as_ref().and_then(|c| c.get(&file.rel, hash));
+                if cached.is_none() {
+                    to_embed.push(text);
                 }
-            };
+                entries.push((tag_idx, hash, cached));
+            }
 
-            for ((tag_idx, _), vec) in def_tags.iter().zip(file_vecs) {
-                defs.push(DefRef { file: fi, tag: *tag_idx });
+            let new_vecs = if to_embed.is_empty() {
+                Vec::new()
+            } else {
+                embedder.encode(&to_embed)
+            };
+            let mut new_iter = new_vecs.into_iter();
+
+            for (tag_idx, hash, cached) in entries {
+                let vec = match cached {
+                    Some(v) => v,
+                    None => {
+                        let v = new_iter.next().unwrap_or_default();
+                        if let Some(c) = &cache {
+                            c.put(&file.rel, hash, &v);
+                        }
+                        v
+                    }
+                };
+                defs.push(DefRef { file: fi, tag: tag_idx });
                 vecs.push(vec);
             }
         }
 
-        if use_cache {
-            let _ = cache.save(root);
-        }
         Semantic { defs, vecs }
     }
 

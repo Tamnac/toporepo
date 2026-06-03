@@ -24,6 +24,8 @@ pub struct Tag {
     /// Byte range of the enclosing definition node (used to extract code for embedding).
     pub start_byte: usize,
     pub end_byte: usize,
+    pub doc: Option<String>,
+    pub doc_line: Option<usize>,
 }
 
 /// Parse `source` for `path` and return its tags. Returns empty for unsupported
@@ -46,16 +48,19 @@ fn extract_with(lang: &lang::Lang, source: &str) -> Option<Vec<Tag>> {
     let mut cursor = QueryCursor::new();
     let mut matches = cursor.matches(&query, tree.root_node(), src);
     let mut tags = Vec::new();
+    // Standalone @doc captures (not part of a def match): (start_line, end_line, text).
+    let mut loose_docs: Vec<(usize, usize, String)> = Vec::new();
 
     while let Some(m) = matches.next() {
-        // Within a single pattern match, locate the name node and the enclosing
-        // definition/reference node (the captures without the `name.` prefix).
         let mut name_cap = None;
         let mut full_cap = None;
         let mut kind = None;
+        let mut doc_nodes: Vec<tree_sitter::Node> = Vec::new();
         for cap in m.captures {
             let cname = names[cap.index as usize];
-            if cname.starts_with("name.") {
+            if cname == "doc" {
+                doc_nodes.push(cap.node);
+            } else if cname.starts_with("name.") {
                 name_cap = Some(cap.node);
                 if cname.contains("definition") {
                     kind = Some(Kind::Def);
@@ -71,6 +76,20 @@ fn extract_with(lang: &lang::Lang, source: &str) -> Option<Vec<Tag>> {
             }
         }
 
+        // Standalone doc (no def in this match) — collect for adjacency pass.
+        if name_cap.is_none() {
+            for n in doc_nodes {
+                if let Ok(t) = n.utf8_text(src) {
+                    loose_docs.push((
+                        n.start_position().row + 1,
+                        n.end_position().row + 1,
+                        t.to_string(),
+                    ));
+                }
+            }
+            continue;
+        }
+
         let (Some(name_node), Some(kind)) = (name_cap, kind) else {
             continue;
         };
@@ -81,6 +100,26 @@ fn extract_with(lang: &lang::Lang, source: &str) -> Option<Vec<Tag>> {
             continue;
         }
         let body = full_cap.unwrap_or(name_node);
+
+        // Inline doc from the same match.
+        let (doc, doc_line) = if kind == Kind::Def && !doc_nodes.is_empty() {
+            doc_nodes.sort_by_key(|n| n.start_byte());
+            let first_line = doc_nodes[0].start_position().row + 1;
+            let raw: String = doc_nodes
+                .iter()
+                .filter_map(|n| n.utf8_text(src).ok())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let stripped = strip_comment_markers(&raw);
+            if stripped.is_empty() {
+                (None, None)
+            } else {
+                (Some(stripped), Some(first_line))
+            }
+        } else {
+            (None, None)
+        };
+
         tags.push(Tag {
             name: name.to_string(),
             kind,
@@ -88,7 +127,60 @@ fn extract_with(lang: &lang::Lang, source: &str) -> Option<Vec<Tag>> {
             end_line: body.end_position().row + 1,
             start_byte: body.start_byte(),
             end_byte: body.end_byte(),
+            doc,
+            doc_line,
         });
     }
+
+    // Attach loose doc comments to the immediately following def.
+    if !loose_docs.is_empty() {
+        loose_docs.sort_by_key(|(_, end, _)| *end);
+        let mut used = vec![false; loose_docs.len()];
+        for tag in &mut tags {
+            if tag.kind != Kind::Def || tag.doc.is_some() {
+                continue;
+            }
+            let found = loose_docs
+                .iter()
+                .enumerate()
+                .rev()
+                .filter(|(i, _)| !used[*i])
+                .find(|(_, (_, end, _))| *end < tag.line && tag.line - *end <= 2)
+                .map(|(i, (start, _, text))| (i, *start, text.as_str()));
+            if let Some((i, start_line, text)) = found {
+                let stripped = strip_comment_markers(text);
+                if !stripped.is_empty() {
+                    tag.doc_line = Some(start_line);
+                    tag.doc = Some(stripped);
+                    used[i] = true;
+                }
+            }
+        }
+    }
+
     Some(tags)
+}
+
+/// Strip comment markers (`//`, `///`, `/*`, `*/`, `*`, `#`) and collapse
+/// to a single line.
+fn strip_comment_markers(raw: &str) -> String {
+    raw.lines()
+        .map(|line| {
+            let t = line.trim();
+            let t = t
+                .strip_prefix("///")
+                .or_else(|| t.strip_prefix("//!"))
+                .or_else(|| t.strip_prefix("//"))
+                .or_else(|| t.strip_prefix("/**"))
+                .or_else(|| t.strip_prefix("/*"))
+                .or_else(|| t.strip_prefix("*/"))
+                .or_else(|| t.strip_prefix("* "))
+                .or_else(|| t.strip_prefix('*'))
+                .or_else(|| t.strip_prefix('#'))
+                .unwrap_or(t);
+            t.trim_end_matches("*/").trim()
+        })
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
