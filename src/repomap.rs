@@ -27,8 +27,8 @@ const WALK_DECAY: f32 = 0.25;
 pub struct Options {
     pub query: Option<String>,
     pub tokens: usize,
-    pub mentioned_idents: Vec<String>,
-    pub mentioned_files: Vec<String>,
+    pub idents: Vec<String>,
+    pub files: Vec<String>,
     pub model: Option<PathBuf>,
     pub no_cache: bool,
     pub verbose: bool,
@@ -47,9 +47,9 @@ pub fn run(root: &Path, opts: &Options) -> Result<String> {
         return Ok(String::new());
     }
 
-    let mentioned: HashSet<String> = opts.mentioned_idents.iter().cloned().collect();
+    let mentioned: HashSet<String> = opts.idents.iter().cloned().collect();
     let chat: HashSet<usize> = opts
-        .mentioned_files
+        .files
         .iter()
         .filter_map(|f| file_index(&idx, f))
         .collect();

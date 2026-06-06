@@ -59,12 +59,12 @@ struct MapArgs {
     tokens: usize,
 
     /// Identifiers the caller cares about (repeatable / comma-separated). Boosts graph edges.
-    #[arg(long, value_delimiter = ',')]
-    mentioned_idents: Vec<String>,
+    #[arg(long, value_delimiter = ',', alias = "mentioned-idents")]
+    idents: Vec<String>,
 
     /// Files already in focus (repeatable / comma-separated). Seeds the graph walk.
-    #[arg(long, value_delimiter = ',')]
-    mentioned_files: Vec<String>,
+    #[arg(long, value_delimiter = ',', alias = "mentioned-files")]
+    files: Vec<String>,
 
     /// Path to the potion-code-16M model directory.
     #[arg(long, env = "TOPOREPO_MODEL")]
@@ -109,11 +109,11 @@ struct GraphArgs {
     #[arg(default_value = ".")]
     path: PathBuf,
     /// Seed files for the walk (comma-separated). Empty = degree prior.
-    #[arg(long, value_delimiter = ',')]
-    mentioned_files: Vec<String>,
+    #[arg(long, value_delimiter = ',', alias = "mentioned-files")]
+    files: Vec<String>,
     /// Boosted identifiers (comma-separated).
-    #[arg(long, value_delimiter = ',')]
-    mentioned_idents: Vec<String>,
+    #[arg(long, value_delimiter = ',', alias = "mentioned-idents")]
+    idents: Vec<String>,
 }
 
 fn main() -> Result<()> {
@@ -132,8 +132,8 @@ fn cmd_map(args: &MapArgs) -> Result<()> {
     let opts = repomap::Options {
         query: args.query.clone(),
         tokens: args.tokens,
-        mentioned_idents: args.mentioned_idents.clone(),
-        mentioned_files: args.mentioned_files.clone(),
+        idents: args.idents.clone(),
+        files: args.files.clone(),
         model: args.model.clone(),
         no_cache: args.no_cache,
         verbose: args.verbose,
@@ -164,9 +164,9 @@ fn cmd_query(args: &QueryArgs) -> Result<()> {
 
 fn cmd_graph(args: &GraphArgs) -> Result<()> {
     let idx = index::Index::build(&args.path);
-    let mentioned: HashSet<String> = args.mentioned_idents.iter().cloned().collect();
+    let mentioned: HashSet<String> = args.idents.iter().cloned().collect();
     let chat: HashSet<usize> = args
-        .mentioned_files
+        .files
         .iter()
         .filter_map(|f| idx.files.iter().position(|fd| &fd.rel == f))
         .collect();

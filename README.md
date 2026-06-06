@@ -40,10 +40,10 @@ toporepo map path/to/repo
 toporepo map path/to/repo -q "where are tokens counted for the budget" -n 2048
 
 # Hint identifiers the agent already cares about (boosts graph edges + exact defs)
-toporepo map . -q "reference graph" --mentioned-idents get_ranked_tags,walk
+toporepo map . -q "reference graph" --idents get_ranked_tags,walk
 
 # Files already in focus seed the walk
-toporepo map . --mentioned-files src/graph.rs,src/index.rs
+toporepo map . --files src/graph.rs,src/index.rs
 ```
 
 ### Options (`map`)
@@ -52,8 +52,8 @@ toporepo map . --mentioned-files src/graph.rs,src/index.rs
 |------|---------|
 | `-q, --query <TEXT>` | natural-language query driving semantic retrieval |
 | `-n, --tokens <N>` | token budget (default 1024) |
-| `--mentioned-idents <A,B>` | identifiers to boost |
-| `--mentioned-files <A,B>` | files to seed the walk |
+| `--idents <A,B>` | identifiers to boost |
+| `--files <A,B>` | files to seed the walk |
 | `--model <DIR>` | path to the potion-code-16M model directory |
 | `--no-cache` | disable the embedding cache |
 | `-v, --verbose` | diagnostics to stderr |
