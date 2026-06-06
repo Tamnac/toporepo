@@ -1,0 +1,92 @@
+[
+  {
+    "id": "self-ranking",
+    "repo": ".",
+    "query": "how are definitions ranked and selected",
+    "tokens": 1024,
+    "expect_files": ["src/repomap.rs", "src/semantic.rs"],
+    "expect_strings": ["RRF_K", "rank", "assemble_map"],
+    "note": "Must surface the RRF fusion in repomap.rs AND semantic ranking — the full scoring pipeline"
+  },
+  {
+    "id": "self-cross-refs",
+    "repo": ".",
+    "query": "cross-file reference tracking between definitions",
+    "tokens": 1024,
+    "expect_files": ["src/index.rs", "src/graph.rs"],
+    "expect_strings": ["defines", "references", "walk"],
+    "note": "index.rs builds defines/references maps, graph.rs walks them — both needed for the full picture"
+  },
+  {
+    "id": "self-render",
+    "repo": ".",
+    "query": "scope-aware output formatting with ancestor context",
+    "tokens": 1024,
+    "expect_files": ["src/render.rs"],
+    "expect_strings": ["plan_lines", "render_file", "is_scope_kind"],
+    "note": "All three render functions needed to understand the output pipeline"
+  },
+  {
+    "id": "or-markdown",
+    "repo": "D:/js/openrouter",
+    "query": "markdown parsing",
+    "tokens": 1024,
+    "expect_files": ["src/Message.tsx"],
+    "expect_strings": ["render", "htmltag", "renderInline"],
+    "note": "Remarkable parser, html escaping, custom renderInline — all in Message.tsx top-level setup"
+  },
+  {
+    "id": "or-shell",
+    "repo": "D:/js/openrouter",
+    "query": "shell tool",
+    "tokens": 1024,
+    "expect_files": ["src-tauri/src/lib.rs", "src/helpers/Extras.tsx", "src/helpers/tools.ts"],
+    "expect_strings": ["find_shell", "applyToolCalls"],
+    "note": "Shell impl in lib.rs, dispatch in Extras.tsx, tool schema in tools.ts — tools.ts has no tags so is invisible"
+  },
+  {
+    "id": "or-streaming",
+    "repo": "D:/js/openrouter",
+    "query": "streaming chat completion",
+    "tokens": 1024,
+    "expect_files": ["src/helpers/streaming.ts"],
+    "expect_strings": ["streamChatCompletion"],
+    "note": "The core streaming logic — currently lost to hub files even at 4k tokens"
+  },
+  {
+    "id": "or-tool-render",
+    "repo": "D:/js/openrouter",
+    "query": "tool result rendering and display",
+    "tokens": 1024,
+    "expect_files": ["src/Message.tsx", "src/helpers/Extras.tsx", "src/helpers/types.ts"],
+    "expect_strings": ["renderToolFull", "renderToolResult", "applyToolCalls", "ToolResult"],
+    "note": "Cross-file: rendering in Message.tsx, dispatch in Extras.tsx, types in types.ts"
+  },
+  {
+    "id": "or-database",
+    "repo": "D:/js/openrouter",
+    "query": "chat history and message persistence",
+    "tokens": 1024,
+    "expect_files": ["src/helpers/db.ts"],
+    "expect_strings": ["initDatabase", "createChat", "deleteChat"],
+    "note": "Must surface the actual CRUD functions, not just the Chat type"
+  },
+  {
+    "id": "or-prompts",
+    "repo": "D:/js/openrouter",
+    "query": "system prompt construction and injection",
+    "tokens": 1024,
+    "expect_files": ["src/helpers/buildRequest.ts", "src/helpers/PromptManager.tsx"],
+    "expect_strings": ["buildRequestMessages", "PromptManager"],
+    "note": "Cross-file: buildRequest.ts assembles the API payload, PromptManager.tsx is the UI"
+  },
+  {
+    "id": "or-keyboard",
+    "repo": "D:/js/openrouter",
+    "query": "keyboard shortcuts and input handling",
+    "tokens": 1024,
+    "expect_files": ["src/App.tsx", "src/input.tsx"],
+    "expect_strings": ["handleKeyDown", "messageKeybind"],
+    "note": "Global shortcuts in App.tsx, message-box keybinds in input.tsx"
+  }
+]

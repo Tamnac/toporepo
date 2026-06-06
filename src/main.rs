@@ -16,14 +16,20 @@ mod walk;
 
 use std::collections::HashSet;
 
-/// codemapper — a token-budgeted code outline/retrieval map.
+/// toporepo — a token-budgeted code outline/retrieval map.
 ///
 /// Pipeline: tree-sitter tags -> reference graph -> semantic rerank -> token-budget fit.
 #[derive(Parser, Debug)]
-#[command(name = "codemapper", version, about)]
+#[command(name = "toporepo", version, about)]
+#[command(args_conflicts_with_subcommands = true)]
+#[command(after_help = "Standard usage:\n  toporepo -q 'query'   map the current directory for a query\n  toporepo              generic map of the current directory")]
 struct Cli {
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
+
+    /// Map arguments used when no subcommand is given (e.g. `toporepo -q 'query'`).
+    #[command(flatten)]
+    map: MapArgs,
 }
 
 #[derive(Subcommand, Debug)]
@@ -44,7 +50,7 @@ struct MapArgs {
     #[arg(default_value = ".")]
     path: PathBuf,
 
-    /// Natural-language query driving semantic retrieval. Omit for a generic map.
+    /// Natural-language query driving semantic retrieval. Recommended if you know what you're looking for. Omit for a generic map.
     #[arg(short, long)]
     query: Option<String>,
 
@@ -61,7 +67,7 @@ struct MapArgs {
     mentioned_files: Vec<String>,
 
     /// Path to the potion-code-16M model directory.
-    #[arg(long, env = "CODEMAPPER_MODEL")]
+    #[arg(long, env = "TOPOREPO_MODEL")]
     model: Option<PathBuf>,
 
     /// Disable the persistent tag/embedding cache.
@@ -91,7 +97,7 @@ struct QueryArgs {
     /// Number of matches to show.
     #[arg(short, long, default_value_t = 20)]
     top: usize,
-    #[arg(long, env = "CODEMAPPER_MODEL")]
+    #[arg(long, env = "TOPOREPO_MODEL")]
     model: Option<PathBuf>,
     #[arg(long)]
     no_cache: bool,
@@ -113,10 +119,11 @@ struct GraphArgs {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Command::Map(args) => cmd_map(&args)?,
-        Command::Tags(args) => cmd_tags(&args)?,
-        Command::Graph(args) => cmd_graph(&args)?,
-        Command::Query(args) => cmd_query(&args)?,
+        Some(Command::Map(args)) => cmd_map(&args)?,
+        Some(Command::Tags(args)) => cmd_tags(&args)?,
+        Some(Command::Graph(args)) => cmd_graph(&args)?,
+        Some(Command::Query(args)) => cmd_query(&args)?,
+        None => cmd_map(&cli.map)?,
     }
     Ok(())
 }

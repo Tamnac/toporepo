@@ -1,4 +1,4 @@
-# codemapper
+# toporepo
 
 A token-budgeted code outline/retrieval map for LLM agents. Given a repository
 (and optionally a natural-language query), it emits a compact, ranked outline of
@@ -34,16 +34,16 @@ tree-sitter tags → reference graph → semantic rerank → token-budget fit �
 
 ```sh
 # Generic structural map of a repo, ~1024 tokens
-codemapper map path/to/repo
+toporepo map path/to/repo
 
 # Query-driven map
-codemapper map path/to/repo -q "where are tokens counted for the budget" -n 2048
+toporepo map path/to/repo -q "where are tokens counted for the budget" -n 2048
 
 # Hint identifiers the agent already cares about (boosts graph edges + exact defs)
-codemapper map . -q "reference graph" --mentioned-idents get_ranked_tags,walk
+toporepo map . -q "reference graph" --mentioned-idents get_ranked_tags,walk
 
 # Files already in focus seed the walk
-codemapper map . --mentioned-files src/graph.rs,src/index.rs
+toporepo map . --mentioned-files src/graph.rs,src/index.rs
 ```
 
 ### Options (`map`)
@@ -60,26 +60,30 @@ codemapper map . --mentioned-files src/graph.rs,src/index.rs
 
 ### Debug subcommands
 
-- `codemapper tags <path>` — dump extracted def/ref tags.
-- `codemapper graph <path>` — print top files by graph rank.
-- `codemapper query <path> -q <text>` — print top semantic matches.
+- `toporepo tags <path>` — dump extracted def/ref tags.
+- `toporepo graph <path>` — print top files by graph rank.
+- `toporepo query <path> -q <text>` — print top semantic matches.
 
 ## Model
 
 The semantic layer needs the `potion-code-16M` model directory (the one
 containing `model.safetensors`, `tokenizer.json`, `config.json`). It is resolved
-in order from: `--model`, the `CODEMAPPER_MODEL` env var, `./potion-code-16M`,
-`../potion-code-16M`, then next to the executable. Only required when a query is
+in order from: `--model`, the `TOPOREPO_MODEL` env var, `./potion-code-16M`,
+`../potion-code-16M`, then next to the executable. If none of those exist, the
+model is downloaded from HuggingFace (`minishlab/potion-code-16M`) on first use
+and cached in the standard HuggingFace cache. Only required when a query is
 given — generic maps run without it.
 
 ## Build
 
 ```sh
-cargo build --release   # target/release/codemapper
+cargo build --release   # target/release/toporepo
 ```
 
 The `.scm` tag queries are vendored under `queries/` and bundled into the binary.
-The embedding cache lives at `<repo>/.codemapper/embeds.bin`.
+Embedding caches are stored globally (the OS cache dir, e.g. `%LOCALAPPDATA%\toporepo`
+or `~/.cache/toporepo`, overridable with `TOPOREPO_CACHE_DIR`), one db per repo,
+never inside the scanned repository.
 
 ## License
 

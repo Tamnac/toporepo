@@ -36,8 +36,14 @@ pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
     a.iter().zip(b).map(|(x, y)| x * y).sum()
 }
 
-/// Resolve the model directory: explicit `--model`, else `CODEMAPPER_MODEL`
-/// (handled by clap), else a list of sensible fallbacks.
+/// HuggingFace repo downloaded on demand when no local model is found.
+const MODEL_REPO: &str = "minishlab/potion-code-16M";
+
+/// Resolve the model: explicit `--model`, else `TOPOREPO_MODEL` (handled by
+/// clap), else a local `potion-code-16M` directory (next to the CWD or the
+/// binary). Failing all of those, return the HuggingFace repo id, which
+/// `model2vec-rs` downloads and caches in the shared HuggingFace cache on first
+/// use.
 pub fn resolve_model(explicit: Option<&Path>) -> Result<PathBuf> {
     if let Some(p) = explicit {
         return Ok(p.to_path_buf());
@@ -56,13 +62,6 @@ pub fn resolve_model(explicit: Option<&Path>) -> Result<PathBuf> {
             return Ok(c.clone());
         }
     }
-    anyhow::bail!(
-        "could not find the potion-code-16M model. Pass --model <dir> or set CODEMAPPER_MODEL. \
-         Looked in: {}",
-        candidates
-            .iter()
-            .map(|c| c.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
+    eprintln!("potion-code-16M not found locally; using HuggingFace {MODEL_REPO} (downloads to cache on first run)");
+    Ok(PathBuf::from(MODEL_REPO))
 }

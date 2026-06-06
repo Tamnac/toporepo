@@ -1,5 +1,6 @@
 /target
 *.bin
-.codemapper/
-# local model dir (large), discovered at runtime
-/potion-code-16M/
+agents.md
+.gitignore
+todo.md
+IMPROVEMENTS.md

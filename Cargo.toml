@@ -1,12 +1,12 @@
 [package]
-name = "codemapper"
+name = "toporepo"
 version = "0.1.0"
 edition = "2021"
 description = "Token-budgeted code outline/retrieval map: tree-sitter tags + reference graph + static-embedding semantic rerank."
 license = "MIT"
 
 [[bin]]
-name = "codemapper"
+name = "toporepo"
 path = "src/main.rs"
 
 [profile.release]
@@ -16,6 +16,7 @@ lto = "thin"
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
+dirs = "6"
 ignore = "0.4"
 include_dir = "0.7"
 serde = { version = "1", features = ["derive"] }
@@ -35,5 +36,5 @@ tree-sitter-cpp = "0.23"
 tree-sitter-ruby = "0.23"
 tree-sitter-c-sharp = "0.23"
 
-# static embeddings (local model only, no network)
-model2vec-rs = { version = "0.2", default-features = false, features = ["onig", "local-only"] }
+# static embeddings (potion-code-16M; downloaded from HuggingFace on first use)
+model2vec-rs = { version = "0.2", default-features = false, features = ["onig", "hf-hub"] }
