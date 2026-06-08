@@ -2,42 +2,19 @@
 
 A token-budgeted code outline/retrieval map for LLM agents. Given a repository
 (and optionally a natural-language query), it emits a compact, ranked outline of
-the most relevant definitions — the file/function structure an agent needs to
-orient itself, fit to a token budget.
+the most relevant definitions.
 
-Concept derived from aider's `repomap.py` (tree-sitter tags → reference graph →
-token-budgeted outline), reworked around a static-embedding semantic ranking
-layer. See [PLAN.md](PLAN.md) for the design rationale.
-
-## Pipeline
-
-```
-tree-sitter tags → reference graph → semantic rerank → token-budget fit → outline
-```
-
-1. **Tags** — tree-sitter parses each file; bundled `.scm` queries extract
-   definitions and references (Rust, Python, JS, TS/TSX, Go, Java, C, C++, C#, Ruby).
-2. **Reference graph** — weighted `(referencer → definer)` edges from shared
-   identifier names. Edge weight = identifier multiplier × chat bonus ×
-   `sqrt(num_refs)` (aider-style, without the length gate).
-3. **Semantic layer** — every definition's code is embedded with
-   [`potion-code-16M`](https://huggingface.co/minishlab/potion-code-16M) (a static
-   model, via [`model2vec-rs`](https://github.com/MinishLab/model2vec-rs)) and
-   cached by file mtime/size. A query is embedded and cosine-ranked; the top
-   matches seed a local walk over the graph.
-4. **Assembly** — definitions are ranked (generic: graph rank; query: scale-free
-   RRF fusion of graph and semantic rankings), then a binary search fits the
-   rendered outline to the token budget. Rendering shows definition lines with
-   their enclosing scope headers and `...` gap markers.
+Concept derived from aider's `repomap.py`, reworked around a static-embedding semantic ranking
+layer.
 
 ## Usage
 
 ```sh
-# Generic structural map of a repo, ~1024 tokens
-toporepo map path/to/repo
+# Generic structural map of current directory, ~1024 tokens
+toporepo
 
-# Query-driven map
-toporepo map path/to/repo -q "where are tokens counted for the budget" -n 2048
+# Query-driven map of a specific folder
+toporepo path/to/repo -q "where are tokens counted for the budget" -n 2048
 
 # Hint identifiers the agent already cares about (boosts graph edges + exact defs)
 toporepo map . -q "reference graph" --idents get_ranked_tags,walk
@@ -46,7 +23,7 @@ toporepo map . -q "reference graph" --idents get_ranked_tags,walk
 toporepo map . --files src/graph.rs,src/index.rs
 ```
 
-### Options (`map`)
+### Options
 
 | flag | meaning |
 |------|---------|
@@ -66,18 +43,14 @@ toporepo map . --files src/graph.rs,src/index.rs
 
 ## Model
 
-The semantic layer needs the `potion-code-16M` model directory (the one
-containing `model.safetensors`, `tokenizer.json`, `config.json`). It is resolved
-in order from: `--model`, the `TOPOREPO_MODEL` env var, `./potion-code-16M`,
-`../potion-code-16M`, then next to the executable. If none of those exist, the
+The semantic layer needs the `potion-code-16M` model directory. The
 model is downloaded from HuggingFace (`minishlab/potion-code-16M`) on first use
-and cached in the standard HuggingFace cache. Only required when a query is
-given — generic maps run without it.
+and cached in the standard HuggingFace cache.
 
 ## Build
 
 ```sh
-cargo build --release   # target/release/toporepo
+cargo build --release  
 ```
 
 The `.scm` tag queries are vendored under `queries/` and bundled into the binary.
@@ -85,6 +58,4 @@ Embedding caches are stored globally (the OS cache dir, e.g. `%LOCALAPPDATA%\top
 or `~/.cache/toporepo`, overridable with `TOPOREPO_CACHE_DIR`), one db per repo,
 never inside the scanned repository.
 
-## License
-
-MIT. Tag queries adapted from aider (MIT).
+Tag queries adapted from aider (MIT).
