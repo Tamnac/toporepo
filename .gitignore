@@ -4,3 +4,5 @@ agents.md
 .gitignore
 todo.md
 IMPROVEMENTS.md
+eval/tests.json
+src/todo.md

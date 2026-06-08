@@ -3,7 +3,7 @@ name = "toporepo"
 version = "0.1.0"
 edition = "2021"
 description = "Token-budgeted code outline/retrieval map: tree-sitter tags + reference graph + static-embedding semantic rerank."
-license = "MIT"
+license = "LicenseRef-Toporepo-Source-1.0"
 
 [[bin]]
 name = "toporepo"
